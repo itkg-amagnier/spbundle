@@ -111,30 +111,35 @@ class LightSamlSpFactory extends AbstractFactory
         return 'form';
     }
 
-    public function getKey()
+    public function getKey(): string
     {
         return 'light_saml_sp';
     }
 
-    protected function createEntryPoint($container, $id, $config, $defaultEntryPointId)
+    public function createAuthenticator(ContainerBuilder $container, string $firewallName, array $config, string $userProviderId): string
     {
-        $entryPointId = 'security.authentication.form_entry_point.'.$id;
-
-        if (class_exists('Symfony\Component\DependencyInjection\ChildDefinition')) {
-            // Symfony >= 3.3
-            $definition = new ChildDefinition('security.authentication.form_entry_point');
-        } else {
-            // Symfony < 3.3
-            $definition = new DefinitionDecorator('security.authentication.form_entry_point');
+        if (isset($config['csrf_token_generator'])) {
+            throw new InvalidConfigurationException('The "csrf_token_generator" on "form_login" does not exist, use "enable_csrf" instead.');
         }
 
-        $container
-            ->setDefinition($entryPointId, $definition)
-            ->addArgument(new Reference('security.http_utils'))
-            ->addArgument($config['login_path'])
-            ->addArgument($config['use_forward'])
-        ;
+        $authenticatorId = 'security.authenticator.form_login.'.$firewallName;
+        $options = array_intersect_key($config, $this->options);
+        $authenticator = $container
+            ->setDefinition($authenticatorId, new ChildDefinition('security.authenticator.form_login'))
+            ->replaceArgument(1, new Reference($userProviderId))
+            ->replaceArgument(2, new Reference($this->createAuthenticationSuccessHandler($container, $firewallName, $config)))
+            ->replaceArgument(3, new Reference($this->createAuthenticationFailureHandler($container, $firewallName, $config)))
+            ->replaceArgument(4, $options);
 
-        return $entryPointId;
+        if ($options['use_forward'] ?? false) {
+            $authenticator->addMethodCall('setHttpKernel', [new Reference('http_kernel')]);
+        }
+
+        return $authenticatorId;
+    }
+    
+    public function getPriority(): int
+    {
+        return 0;
     }
 }
